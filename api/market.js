@@ -11,17 +11,24 @@ export default async function handler(req, res) {
   const symbol = req.query.symbol || "SPY";
   const interval = req.query.interval || "15min";
 
-  const symbols = ["SPY", "XAU/USD", "WTI", "BRENT"];
+  const symbols = {
+    "SPY": "SPY",
+    "XAU/USD": "XAU/USD",
+    "WTI": "WTI/USD",
+    "BRENT": "XBR/USD"
+  };
+
   const intervals = ["15min", "1h", "4h"];
 
-  if (!symbols.includes(symbol) || !intervals.includes(interval)) {
+  if (!Object.hasOwn(symbols, symbol) || !intervals.includes(interval)) {
     return res.status(400).json({ error: "Invalid parameters" });
   }
 
   const params = new URLSearchParams({
-    symbol,
+    symbol: symbols[symbol],
     interval,
     outputsize: "250",
+    timezone: "UTC",
     apikey: key
   });
 
@@ -34,7 +41,25 @@ export default async function handler(req, res) {
 
     if (!response.ok || data.status === "error" || !Array.isArray(data.values)) {
       return res.status(502).json({
-        error: "Market data unavailable"
+        error: "Twelve Data error: " +
+          String(data.message || "Market data unavailable")
+            .replaceAll(key, "[hidden]")
+      });
+    }
+
+    if (data.meta?.symbol !== symbols[symbol]) {
+      return res.status(502).json({
+        error: "Incorrect market symbol"
+      });
+    }
+
+    if (data.values.length < 201 || !data.values.every(v =>
+      [v.open, v.high, v.low, v.close].every(x =>
+        x != null && x !== "" && Number.isFinite(Number(x))
+      )
+    )) {
+      return res.status(502).json({
+        error: "Invalid or insufficient market data"
       });
     }
 
